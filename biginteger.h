@@ -1,0 +1,660 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <cmath>
+
+class BigInteger {
+  enum class Sign {
+    NON_NEGATIVE = 1,
+    NEGATIVE = -1,
+  };
+
+  std::vector<int64_t> number;
+  Sign sign = Sign::NON_NEGATIVE;
+  static const int32_t kDigits = 9;
+  static const int64_t kBase = 1'000'000'000;
+
+  void add(const BigInteger& other);
+
+  void subtract(const BigInteger& other);
+
+  static BigInteger multiply(BigInteger num, int64_t factor);
+
+  BigInteger shiftBit(size_t count) const;
+
+  BigInteger shift(size_t count) const;
+
+  size_t length() const;
+
+ public:
+  BigInteger();
+
+  BigInteger(int32_t num);
+
+  explicit BigInteger(std::string str);
+
+  bool isZero() const;
+  bool isMinusOne() const;
+
+  std::string toString() const;
+
+  explicit operator bool() const;
+
+  bool operator==(const BigInteger& other) const;
+
+  std::strong_ordering operator<=>(const BigInteger& other) const;
+
+  BigInteger& operator++();
+
+  BigInteger& operator--();
+
+  BigInteger operator++(int);
+
+  BigInteger operator--(int);
+
+  BigInteger& operator+=(const BigInteger& other);
+
+  BigInteger& operator-=(const BigInteger& other);
+
+  BigInteger& operator*=(const BigInteger& other);
+
+  BigInteger& operator/=(const BigInteger& divisor);
+
+  BigInteger& operator%=(const BigInteger& divisor);
+
+  void changeSign();
+};
+
+void BigInteger::changeSign() {
+  if (isZero()) {
+    return;
+  }
+  sign = sign == Sign::NON_NEGATIVE ? Sign::NEGATIVE : Sign::NON_NEGATIVE;
+}
+
+BigInteger::BigInteger() : sign(Sign::NON_NEGATIVE) {
+  number.push_back(0);
+}
+
+BigInteger::BigInteger(int32_t num) : sign(Sign::NON_NEGATIVE) {
+  if (num == 0) {
+    number = {0};
+    return;
+  }
+  if (num < 0) {
+    num = -num;
+    sign = Sign::NEGATIVE;
+  }
+
+  while (num > 0) {
+    number.push_back(num % kBase);
+    num /= kBase;
+  }
+}
+
+BigInteger::BigInteger(std::string str) : sign(Sign::NON_NEGATIVE) {
+  if (str[0] == '-') {
+    str.erase(str.begin());
+    sign = Sign::NEGATIVE;
+  }
+
+  int32_t rank = 1;
+  int32_t digit = 0;
+  for (size_t i = str.size(); i-- > 0;) {
+    if (rank == kBase) {
+      number.push_back(digit);
+      digit = 0;
+      rank = 1;
+    }
+
+    digit += rank * (str[i] - '0');
+    rank *= 10;
+  }
+  number.push_back(digit);
+}
+
+std::string BigInteger::toString() const {
+  std::string str;
+  if (sign == Sign::NEGATIVE) {
+    str = "-";
+  }
+  std::string digit;
+  for (size_t i = number.size(); i-- > 0;) {
+    digit = std::to_string(number[i]);
+    if (i + 1 != number.size()) {
+      digit.insert(0, std::string(kDigits - digit.size(), '0'));
+    }
+    str += digit;
+  }
+  return str;
+}
+
+BigInteger::operator bool() const {
+  return !(number.empty() || (number.size() == 1 && number[0] == 0));
+}
+
+bool BigInteger::operator==(const BigInteger& other) const {
+  return sign == other.sign && number == other.number;
+}
+
+std::strong_ordering BigInteger::operator<=>(const BigInteger& other) const {
+  if (sign != other.sign) {
+    return sign < other.sign ? std::strong_ordering::less
+                             : std::strong_ordering::greater;
+  }
+
+  if (number.size() != other.number.size()) {
+    return (number.size() < other.number.size()) == (sign == Sign::NON_NEGATIVE)
+           ? std::strong_ordering::less : std::strong_ordering::greater;
+  }
+
+  for (size_t i = number.size(); i-- > 0;) {
+    if (number[i] != other.number[i]) {
+      return (number[i] < other.number[i]) == (sign == Sign::NON_NEGATIVE)
+             ? std::strong_ordering::less : std::strong_ordering::greater;
+    }
+  }
+  return std::strong_ordering::equal;
+}
+
+BigInteger& BigInteger::operator++() {
+  return *this += 1;
+}
+
+BigInteger& BigInteger::operator--() {
+  return *this -= 1;
+}
+
+BigInteger BigInteger::operator++(int) {
+  BigInteger result = *this;
+  *this += 1;
+  return result;
+}
+
+BigInteger BigInteger::operator--(int) {
+  BigInteger result = *this;
+  *this -= 1;
+  return result;
+}
+
+void BigInteger::add(const BigInteger& other) {
+  if (sign != other.sign) {
+    subtract(other);
+    return;
+  }
+  int64_t rest = 0;
+  size_t old_size = number.size();
+  size_t max_size = std::max(number.size(), other.number.size());
+  number.resize(max_size + 1);
+  for (size_t i = 0; i < max_size + 1; ++i) {
+    if (i < old_size) {
+      rest += number[i];
+    }
+
+    if (i < other.number.size()) {
+      rest += other.number[i];
+    } else if (rest == 0) {
+      break;
+    }
+
+    number[i] = rest % kBase;
+    rest /= kBase;
+    if (i >= other.number.size() && rest == 0) {
+      break;
+    }
+  }
+  for (size_t i = number.size(); i-- > 0;) {
+    if (number[i] != 0) {
+      number.resize(i + 1);
+      return;
+    }
+  }
+  *this = 0;
+}
+
+void BigInteger::subtract(const BigInteger& other) {
+  Sign res_sign = sign;
+
+  bool first_bigger;
+  sign = other.sign;
+  if ((*this < other) == (sign == Sign::NON_NEGATIVE)) {
+    first_bigger = false;
+    res_sign =
+        (res_sign == Sign::NEGATIVE ? Sign::NON_NEGATIVE : Sign::NEGATIVE);
+  } else {
+    first_bigger = true;
+  }
+
+  sign = res_sign;
+  int64_t rest = 0;
+  size_t old_size = number.size();
+  size_t max_size = std::max(number.size(), other.number.size());
+  number.resize(max_size + 1);
+  for (size_t i = 0; i < max_size + 1; ++i) {
+    if (i < old_size) {
+      rest += number[i] * (first_bigger ? 1 : -1);
+    }
+
+    if (i < other.number.size()) {
+      rest -= other.number[i] * (first_bigger ? 1 : -1);
+    }
+
+    if (rest < 0) {
+      number[i] = kBase + rest;
+      rest = -1;
+    } else {
+      number[i] = rest % kBase;
+      rest /= kBase;
+    }
+    if (i >= other.number.size() && rest == 0) {
+      break;
+    }
+  }
+
+  for (size_t i = number.size(); i-- > 0;) {
+    if (number[i] != 0) {
+      number.resize(i + 1);
+      return;
+    }
+  }
+  *this = 0;
+}
+
+BigInteger& BigInteger::operator+=(const BigInteger& other) {
+  if (isZero()) {
+    *this = other;
+    return *this;
+  }
+  if (other == 0) {
+    return *this;
+  }
+
+  add(other);
+  return *this;
+}
+
+BigInteger& BigInteger::operator-=(const BigInteger& other) {
+  changeSign();
+  *this += other;
+  if (isZero()) {
+    return *this;
+  }
+  changeSign();
+  return *this;
+}
+
+BigInteger BigInteger::multiply(BigInteger num, int64_t factor) {
+  if (factor == 0) {
+    return 0;
+  }
+
+  int64_t rest = 0;
+  for (int64_t& bit : num.number) {
+    rest += bit * factor;
+    bit = rest % kBase;
+    rest /= kBase;
+  }
+
+  if (rest != 0) {
+    num.number.push_back(rest);
+  }
+  return num;
+}
+
+BigInteger BigInteger::shiftBit(size_t count) const {
+  BigInteger result = *this;
+  std::vector<int64_t> zeros(count);
+  result.number.insert(result.number.begin(), zeros.begin(), zeros.end());
+  return result;
+}
+
+BigInteger& BigInteger::operator*=(const BigInteger& other) {
+  if (isZero() || other == 0) {
+    *this = 0;
+    return *this;
+  }
+
+  sign = (sign == other.sign ? Sign::NON_NEGATIVE : Sign::NEGATIVE);
+  BigInteger result = 0;
+  for (size_t i = 0; i < other.number.size(); ++i) {
+    result += multiply(*this, other.number[i]).shiftBit(i);
+  }
+  *this = result;
+  return *this;
+}
+
+BigInteger& BigInteger::operator/=(const BigInteger& divisor) {
+  Sign res_sign = (sign == divisor.sign ? Sign::NON_NEGATIVE : Sign::NEGATIVE);
+  sign = Sign::NON_NEGATIVE;
+  BigInteger div = divisor;
+  div.sign = Sign::NON_NEGATIVE;
+
+  if (*this < div) {
+    *this = 0;
+    return *this;
+  }
+  if (*this == div) {
+    *this = 1;
+    sign = res_sign;
+    return *this;
+  }
+
+  size_t len;
+  size_t mod_len = div.length();
+  size_t zero_count;
+  BigInteger shift_mod;
+  BigInteger tmp_mod;
+  BigInteger factor;
+  BigInteger result;
+  while (div <= *this) {
+    len = length();
+    shift_mod = div.shift(len - mod_len);
+    zero_count = len - mod_len;
+    if (*this < shift_mod) {
+      shift_mod = div.shift(len - mod_len - 1);
+      zero_count = len - mod_len - 1;
+    }
+
+    factor = 1;
+    tmp_mod = shift_mod;
+    while (tmp_mod < *this) {
+      tmp_mod += shift_mod;
+      ++factor;
+    }
+
+    if (tmp_mod == *this) {
+      result += factor.shift(zero_count);
+      *this = result;
+      sign = res_sign;
+      return *this;
+    }
+
+    tmp_mod -= shift_mod;
+    --factor;
+    result += factor.shift(zero_count);
+    *this -= tmp_mod;
+  }
+  *this = result;
+  sign = res_sign;
+  return *this;
+}
+
+BigInteger& BigInteger::operator%=(const BigInteger& divisor) {
+  BigInteger dividend = *this;
+  dividend /= divisor;
+  dividend *= divisor;
+  *this -= dividend;
+  return *this;
+}
+
+size_t BigInteger::length() const {
+  return (number.size() - 1) * kDigits +
+      std::to_string(number.back()).size();
+}
+
+BigInteger BigInteger::shift(size_t count) const {
+  BigInteger result = *this;
+  result *= BigInteger("1" + std::string(count % kDigits, '0'));
+  std::vector<int64_t> zeros(count / kDigits);
+  result.number.insert(result.number.begin(), zeros.begin(), zeros.end());
+  return result;
+}
+
+bool BigInteger::isZero() const {
+  return number.size() == 1 && number[0] == 0;
+}
+
+bool BigInteger::isMinusOne() const {
+  return number.size() == 1 && number[0] == 1 && sign == Sign::NEGATIVE;
+}
+
+BigInteger operator+(const BigInteger& num1, const BigInteger& num2) {
+  BigInteger result(num1);
+  result += num2;
+  return result;
+}
+
+BigInteger operator-(const BigInteger& num1, const BigInteger& num2) {
+  BigInteger result(num1);
+  result -= num2;
+  return result;
+}
+
+BigInteger operator*(const BigInteger& num1, const BigInteger& num2) {
+  BigInteger result(num1);
+  result *= num2;
+  return result;
+}
+
+BigInteger operator/(const BigInteger& num1, const BigInteger& num2) {
+  BigInteger result(num1);
+  result /= num2;
+  return result;
+}
+
+BigInteger operator%(const BigInteger& num1, const BigInteger& num2) {
+  BigInteger result(num1);
+  result %= num2;
+  return result;
+}
+
+BigInteger operator-(const BigInteger& num) {
+  BigInteger result = num;
+  if (result != 0) {
+    result.changeSign();
+  }
+  return result;
+}
+
+BigInteger operator "" _bi(const char* str) {
+  BigInteger result(str);
+  return result;
+}
+
+BigInteger operator "" _bi(unsigned long long num) {
+  BigInteger result(std::to_string(num));
+  return result;
+}
+
+std::ostream& operator<<(std::ostream& os, const BigInteger& num) {
+  return os << num.toString();
+}
+
+std::istream& operator>>(std::istream& is, BigInteger& num) {
+  std::string str;
+  is >> str;
+  num = BigInteger(str);
+  return is;
+}
+
+class Rational {
+  BigInteger numerator;
+
+  BigInteger denominator;
+
+  static BigInteger gcd(BigInteger first, BigInteger second);
+
+  void reduce();
+
+ public:
+  Rational();
+
+  Rational(BigInteger num, BigInteger denom);
+
+  Rational(BigInteger num);
+
+  Rational(int32_t num, int32_t denom);
+
+  Rational(int32_t num);
+
+  std::string toString() const;
+
+  std::string asDecimal(int32_t precision) const;
+
+  explicit operator double() const;
+
+  bool operator==(const Rational& other) const;
+
+  std::strong_ordering operator<=>(const Rational& other) const;
+
+  Rational& operator+=(const Rational& other);
+
+  Rational& operator-=(const Rational& other);
+
+  Rational& operator*=(const Rational& other);
+
+  Rational& operator/=(const Rational& other);
+
+  Rational operator-() const;
+};
+
+void Rational::reduce() {
+  if (denominator < 0) {
+    numerator.changeSign();
+    denominator.changeSign();
+  }
+  BigInteger gcd_num = gcd(numerator, denominator);
+  numerator /= gcd_num;
+  denominator /= gcd_num;
+}
+
+Rational::Rational(BigInteger num, BigInteger denom)
+    : numerator(num), denominator(denom) {
+  reduce();
+}
+
+Rational::Rational() : Rational(0, 1) {}
+
+Rational::Rational(BigInteger num) : numerator(num), denominator(1) {
+  reduce();
+}
+
+Rational::Rational(int32_t num, int32_t denom)
+    : numerator(num), denominator(denom) {
+  reduce();
+}
+
+Rational::Rational(int32_t num) : numerator(num), denominator(1) {
+  reduce();
+}
+
+std::string Rational::toString() const {
+  std::string result = numerator.toString();
+  if (denominator != 1) {
+    result += "/" + denominator.toString();
+  }
+  return result;
+}
+
+std::string Rational::asDecimal(int32_t precision = 0) const {
+  BigInteger
+      shift_num = numerator * BigInteger("1" + std::string(precision, '0'));
+  if (shift_num < 0) {
+    shift_num.changeSign();
+  }
+
+  BigInteger fraction = shift_num / denominator;
+  std::string result = fraction.toString();
+  if (static_cast<int32_t>(result.size()) <= precision) {
+    result =
+        std::string(static_cast<size_t>(precision) + 1 - result.size(), '0') +
+            result;
+  }
+
+  if (precision != 0) {
+    result.insert(result.end() - precision, '.');
+  }
+  if (numerator < 0 && fraction != 0) {
+    result.insert(0, 1, '-');
+  }
+  return result;
+}
+
+Rational::operator double() const {
+  return std::stod(asDecimal(15));
+}
+
+bool Rational::operator==(const Rational& other) const {
+  return numerator == other.numerator && denominator == other.denominator;
+}
+
+std::strong_ordering Rational::operator<=>(const Rational& other) const {
+  return numerator * other.denominator <=> other.numerator * denominator;
+}
+
+Rational& Rational::operator+=(const Rational& other) {
+  BigInteger gcd_num = gcd(denominator, other.denominator);
+  BigInteger left_factor = other.denominator / gcd_num;
+  BigInteger right_factor = denominator / gcd_num;
+  numerator = numerator * left_factor + other.numerator * right_factor;
+  denominator = denominator * left_factor;
+  return *this;
+}
+
+Rational& Rational::operator-=(const Rational& other) {
+  numerator.changeSign();
+  *this += other;
+  numerator.changeSign();
+  return *this;
+}
+
+Rational& Rational::operator*=(const Rational& other) {
+  numerator *= other.numerator;
+  denominator *= other.denominator;
+  reduce();
+  return *this;
+}
+
+Rational& Rational::operator/=(const Rational& other) {
+  numerator *= other.denominator;
+  denominator *= other.numerator;
+  reduce();
+  return *this;
+}
+
+Rational Rational::operator-() const {
+  Rational result(*this);
+  result.numerator.changeSign();
+  return result;
+}
+
+Rational operator+(const Rational& num1, const Rational& num2) {
+  Rational result(num1);
+  result += num2;
+  return result;
+}
+
+Rational operator-(const Rational& num1, const Rational& num2) {
+  Rational result(num1);
+  result -= num2;
+  return result;
+}
+
+Rational operator*(const Rational& num1, const Rational& num2) {
+  Rational result(num1);
+  result *= num2;
+  return result;
+}
+
+Rational operator/(const Rational& num1, const Rational& num2) {
+  Rational result(num1);
+  result /= num2;
+  return result;
+}
+
+BigInteger Rational::gcd(BigInteger first, BigInteger second) {
+  if (first < 0) {
+    first.changeSign();
+  }
+  if (second < 0) {
+    second.changeSign();
+  }
+  BigInteger tmp;
+  while (second != 0) {
+    first %= second;
+    tmp = second;
+    second = first;
+    first = tmp;
+  }
+  return first;
+}
